@@ -511,7 +511,7 @@ class Kernel
      */
     public function dispatchRequest($module, $action = 'indexAction', array $params = array())
     {
-        $request = $this->request();
+        $request = clone $this->request();
         $requestMethod = $request->method();
         
         // Append 'Action' or 'Method'
