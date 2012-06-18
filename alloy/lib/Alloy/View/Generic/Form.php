@@ -3,7 +3,7 @@ namespace Alloy\View\Generic;
 
 /**
  * Generic Form View
- * 
+ *
  * @package Alloy
  * @license http://www.opensource.org/licenses/bsd-license.php
  * @link http://alloyframework.com/
@@ -13,8 +13,8 @@ class Form extends \Alloy\View\Template
     protected $_fields = array();
     protected $_fieldValues = array();
     protected $_submitButtonText = 'Save';
-    
-    
+
+
     /**
      * Setup form object
      */
@@ -24,13 +24,13 @@ class Form extends \Alloy\View\Template
         $this->path(__DIR__ . '/templates/');
 
         // Default enctype
-        $this->set('enctype', 'appliaction/x-www-form-urlencoded');
+        $this->set('enctype', 'application/x-www-form-urlencoded');
 
         // Default settings
         $this->set('_form_tags', true);
     }
-    
-    
+
+
     /**
      * Action param of form
      *
@@ -41,8 +41,8 @@ class Form extends \Alloy\View\Template
         $this->set('action', $action);
         return $this;
     }
-    
-    
+
+
     /**
      * HTTP Method param of form
      *
@@ -81,8 +81,8 @@ class Form extends \Alloy\View\Template
         }
         return $this;
     }
-    
-    
+
+
     /**
      * Field setter/getter
      */
@@ -94,8 +94,8 @@ class Form extends \Alloy\View\Template
         }
         return $this->_fields;
     }
-    
-    
+
+
     /**
      * Get params set on field
      *
@@ -109,8 +109,8 @@ class Form extends \Alloy\View\Template
             return false;
         }
     }
-    
-    
+
+
     /**
      * Value by field name
      */
@@ -120,12 +120,12 @@ class Form extends \Alloy\View\Template
         if(null === $field) {
             return $this->_fieldValues;
         }
-        
+
         // Set data for single field
         if(null !== $value) {
             $this->_fieldValues[$field] = $value;
             return $this;
-        
+
         // Set data from array for many fields
         } elseif(is_array($field)) {
             foreach($field as $fieldx => $val) {
@@ -133,12 +133,12 @@ class Form extends \Alloy\View\Template
             }
             return $this;
         }
-        
+
         // Return data for given field
         return isset($this->_fieldValues[$field]) ? $this->_fieldValues[$field] : null;
     }
-    
-    
+
+
     /**
      * Remove fields by name
      *
@@ -163,8 +163,8 @@ class Form extends \Alloy\View\Template
         }
         return $this;
     }
-    
-    
+
+
     /**
      * Set the text for the submit button
      *
@@ -191,8 +191,8 @@ class Form extends \Alloy\View\Template
         $this->set('_form_tags', $show);
         return $this;
     }
-    
-    
+
+
     /**
      * Return template content
      */
@@ -200,7 +200,7 @@ class Form extends \Alloy\View\Template
     {
         // Set template vars
         $this->set('fields', $this->fields());
-        
+
         return parent::content($parsePHP);
     }
 }

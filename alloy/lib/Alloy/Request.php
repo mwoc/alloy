@@ -37,8 +37,19 @@ class Request
         }
 
         // Properly handle PUT and DELETE request params
-        if($this->isPut() || $this->isDelete()) {
-            parse_str(file_get_contents('php://input'), $params);
+        if($this->isPost() || $this->isPut() || $this->isDelete()) {
+			$input=file_get_contents('php://input');
+			if($this->isJSON()){
+				//try to decode as if json is sent
+				$params = json_decode($input,true);
+
+				if(JSON_ERROR_NONE!==json_last_error()){
+					//probably not json data, try default instead
+					parse_str($input, $params);
+				}
+			} else {
+				parse_str($input, $params);
+			}
             $this->params($params);
         }
     }
@@ -48,7 +59,7 @@ class Request
      * Return requested URL path
      *
      * Works for HTTP(S) requests and CLI requests using the -u flag for URL dispatch emulation
-     * 
+     *
      * @return string Requested URL path segement
      */
     public function url()
@@ -57,20 +68,20 @@ class Request
             if($this->isCli()) {
                 // CLI request
                 $cliArgs = getopt("u:");
-                
+
                 $requestUrl = isset($cliArgs['u']) ? $cliArgs['u'] : '/';
                 $qs = parse_url($requestUrl, PHP_URL_QUERY);
                 $cliRequestParams = array();
                 parse_str($qs, $cliRequestParams);
-                
+
                 // Set parsed query params back on request object
                 $this->setParams($cliRequestParams);
-                
+
                 // Set requestUrl and remove query string if present so router can parse it as expected
                 if($qsPos = strpos($requestUrl, '?')) {
                     $requestUrl = substr($requestUrl, 0, $qsPos);
                 }
-                
+
             } else {
                 // HTTP request
                 $requestUrl = $this->get('u', '/');
@@ -80,8 +91,8 @@ class Request
 
         return $this->_url;
     }
-    
-    
+
+
     /**
      * Access values contained in the superglobals as public members
      * Order of precedence: 1. GET, 2. POST, 3. COOKIE, 4. SERVER, 5. ENV
@@ -96,27 +107,27 @@ class Request
             case isset($this->_params[$key]):
                 $value = $this->_params[$key];
                 break;
-            
+
             case isset($_GET[$key]):
                 $value = $_GET[$key];
                 break;
-            
+
             case isset($_POST[$key]):
                 $value = $_POST[$key];
                 break;
-            
+
             case isset($_COOKIE[$key]):
                 $value = $_COOKIE[$key];
                 break;
-            
+
             case isset($_SERVER[$key]):
                 $value = $_SERVER[$key];
                 break;
-                
+
             case isset($_ENV[$key]):
                 $value = $_ENV[$key];
                 break;
-                
+
             default:
                 $value = $default;
         }
@@ -141,12 +152,12 @@ class Request
                             $value = $value[$keyPart];
                         } else {
                             $value = $default;
-                        }   
+                        }
                     }
                 }
             }
         }
-        
+
         return $value;
     }
     // Automagic companion function
@@ -154,8 +165,8 @@ class Request
     {
         return $this->get($key);
     }
-    
-    
+
+
     /**
      *	Override request parameter value
      *
@@ -171,8 +182,8 @@ class Request
     {
         $this->set($key, $value);
     }
-    
-    
+
+
     /**
     * Check to see if a property is set
     *
@@ -198,8 +209,8 @@ class Request
             return false;
         }
     }
-    
-    
+
+
     /**
     * Retrieve request parameters
     *
@@ -212,15 +223,15 @@ class Request
             foreach($params as $pKey => $pValue) {
                 $this->set($pKey, $pValue);
             }
-            
+
         // Getting
         } else {
             $params = array_merge($_GET, $_POST, $this->_params);
         }
         return $params;
     }
-    
-    
+
+
     /**
     * Set additional request parameters
     */
@@ -232,8 +243,8 @@ class Request
             }
         }
     }
-    
-    
+
+
     /**
     * Retrieve a member of the $params set variables
     *
@@ -249,11 +260,11 @@ class Request
         if (null === $key) {
             return $this->_params;
         }
-        
+
         return (isset($this->_params[$key])) ? $this->_params[$key] : $default;
     }
-    
-    
+
+
     /**
     * Retrieve a member of the $_GET superglobal
     *
@@ -270,11 +281,11 @@ class Request
             // Return _GET params without routing param or other params set by Alloy or manually on the request object
             return array_diff_key($_GET, $this->param() + array('u' => 1));
         }
-        
+
         return (isset($_GET[$key])) ? $_GET[$key] : $default;
     }
-    
-    
+
+
     /**
     * Retrieve a member of the $_POST superglobal
     *
@@ -287,14 +298,15 @@ class Request
     */
     public function post($key = null, $default = null)
     {
+
         if (null === $key) {
             return $_POST;
         }
-        
+
         return (isset($_POST[$key])) ? $_POST[$key] : $default;
     }
-    
-    
+
+
     /**
     * Retrieve a member of the $_COOKIE superglobal
     *
@@ -310,11 +322,11 @@ class Request
         if (null === $key) {
             return $_COOKIE;
         }
-        
+
         return (isset($_COOKIE[$key])) ? $_COOKIE[$key] : $default;
     }
-    
-    
+
+
     /**
     * Retrieve a member of the $_SERVER superglobal
     *
@@ -329,11 +341,11 @@ class Request
         if (null === $key) {
             return $_SERVER;
         }
-        
+
         return (isset($_SERVER[$key])) ? $_SERVER[$key] : $default;
     }
-    
-    
+
+
     /**
     * Retrieve a member of the $_ENV superglobal
     *
@@ -348,11 +360,11 @@ class Request
         if (null === $key) {
             return $_ENV;
         }
-        
+
         return (isset($_ENV[$key])) ? $_ENV[$key] : $default;
     }
-    
-    
+
+
     /**
     * Return the value of the given HTTP header. Pass the header name as the
     * plain, HTTP-specified header name. Ex.: Ask for 'Accept' to get the
@@ -368,7 +380,13 @@ class Request
         if (!empty($_SERVER[$temp])) {
             return $_SERVER[$temp];
         }
-            
+
+        // Some headers do not have a HTTP_ prefix, like CONTENT_TYPE
+        $temp2 = strtoupper(str_replace('-', '_', $header));
+        if (!empty($_SERVER[$temp2])) {
+            return $_SERVER[$temp2];
+        }
+
         // This seems to be the only way to get the Authorization header on Apache
         if (function_exists('apache_request_headers')) {
             $headers = apache_request_headers();
@@ -376,11 +394,11 @@ class Request
                 return $headers[$header];
             }
         }
-        
+
         return false;
     }
-    
-    
+
+
     /**
     * Return the method by which the request was made. Always returns HTTP_METHOD in UPPERCASE.
     *
@@ -441,8 +459,8 @@ class Request
     {
         return $this->server('SERVER_PORT');
     }
-    
-    
+
+
     /**
      * Get a user's correct IP address
      * Retrieves IP's behind firewalls or ISP proxys like AOL
@@ -452,10 +470,10 @@ class Request
     public function ip()
     {
         $ip = FALSE;
-    
+
         if( !empty( $_SERVER["HTTP_CLIENT_IP"] ) )
             $ip = $_SERVER["HTTP_CLIENT_IP"];
-    
+
         if( !empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ){
             // Put the IP's into an array which we shall work with shortly.
             $ips = explode( ", ", $_SERVER['HTTP_X_FORWARDED_FOR'] );
@@ -463,7 +481,7 @@ class Request
                 array_unshift( $ips, $ip );
                 $ip = false;
             }
-    
+
             for( $i = 0; $i < count($ips); $i++ ){
                 if (!eregi ("^(10|172\.16|192\.168)\.", $ips[$i])) {
                     $ip = $ips[$i];
@@ -473,8 +491,8 @@ class Request
         }
         return ($ip ? $ip : $_SERVER['REMOTE_ADDR']);
     }
-    
-    
+
+
     /**
      *	Determine is incoming request is POST
      *
@@ -484,8 +502,8 @@ class Request
     {
         return ($this->method() == "POST");
     }
-    
-    
+
+
     /**
      *	Determine is incoming request is GET
      *
@@ -495,8 +513,8 @@ class Request
     {
         return ($this->method() == "GET");
     }
-    
-    
+
+
     /**
      *	Determine is incoming request is PUT
      *
@@ -506,8 +524,8 @@ class Request
     {
         return ($this->method() == "PUT");
     }
-    
-    
+
+
     /**
      *	Determine is incoming request is DELETE
      *
@@ -517,8 +535,8 @@ class Request
     {
         return ($this->method() == "DELETE");
     }
-    
-    
+
+
     /**
      *	Determine is incoming request is HEAD
      *
@@ -539,8 +557,8 @@ class Request
     {
         return ($this->method() == "OPTIONS");
     }
-    
-    
+
+
     /**
      *	Determine is incoming request is secure HTTPS
      *
@@ -550,8 +568,8 @@ class Request
     {
         return  (bool) ((!isset($_SERVER['HTTPS']) || strtolower($_SERVER['HTTPS']) != 'on') ? false : true);
     }
-    
-    
+
+
     /**
      * Is the request a Javascript XMLHttpRequest?
      *
@@ -564,6 +582,10 @@ class Request
         return ($this->header('X_REQUESTED_WITH') == 'XMLHttpRequest');
     }
 
+	public function isJSON()
+    {
+        return (strpos($this->header('CONTENT_TYPE'),'application/json')===0);
+    }
 
     /**
      * Is the request coming from a mobile device?
@@ -584,12 +606,12 @@ class Request
             || $op != ''
             || strpos($ua, 'iphone') !== false
             || strpos($ua, 'android') !== false
-            || strpos($ua, 'iemobile') !== false 
+            || strpos($ua, 'iemobile') !== false
             || strpos($ua, 'kindle') !== false
-            || strpos($ua, 'sony') !== false 
-            || strpos($ua, 'symbian') !== false 
-            || strpos($ua, 'nokia') !== false 
-            || strpos($ua, 'samsung') !== false 
+            || strpos($ua, 'sony') !== false
+            || strpos($ua, 'symbian') !== false
+            || strpos($ua, 'nokia') !== false
+            || strpos($ua, 'samsung') !== false
             || strpos($ua, 'mobile') !== false
             || strpos($ua, 'windows ce') !== false
             || strpos($ua, 'epoc') !== false
@@ -630,8 +652,8 @@ class Request
             || strpos($ua, 'wap2.') !== false
         );
     }
-    
-    
+
+
     /**
      * Is the request coming from a bot or spider?
      *
@@ -651,8 +673,8 @@ class Request
             false !== strpos($ua, 'spider')
         );
     }
-    
-    
+
+
     /**
      * Is the request from CLI (Command-Line Interface)?
      *
@@ -662,11 +684,11 @@ class Request
     {
         return !isset($_SERVER['HTTP_HOST']);
     }
-    
-    
+
+
     /**
      * Is this a Flash request?
-     * 
+     *
      * @return bool
      */
     public function isFlash()

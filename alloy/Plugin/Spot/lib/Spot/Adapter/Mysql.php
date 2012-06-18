@@ -128,10 +128,16 @@ class Mysql extends PDO_Abstract implements AdapterInterface
 		if(!isset($this->_fieldTypeMap[$fieldInfo['type']])) {
 			throw new \Spot\Exception("Field type '" . $fieldInfo['type'] . "' not supported");
 		}
+
+		//MOD 20120611 mwoc: only overwrite NULL values with defaults
+		foreach($fieldInfo as $key => $opt){
+			if(is_null($opt)){
+				$fieldInfo[$key] = isset($this->_fieldTypeMap[$fieldInfo['type']][$key]) ? $this->_fieldTypeMap[$fieldInfo['type']][$key] : NULL;
+			}
+		}
+
 		//Ensure this class will choose adapter type
-		unset($fieldInfo['adapter_type']);
-		
-		$fieldInfo = array_merge($this->_fieldTypeMap[$fieldInfo['type']],$fieldInfo);
+		$fieldInfo['adapter_type'] = $this->_fieldTypeMap[$fieldInfo['type']]['adapter_type'];
 
 		$syntax = "`" . $fieldName . "` " . $fieldInfo['adapter_type'];
 		// Column type and length
@@ -139,7 +145,7 @@ class Mysql extends PDO_Abstract implements AdapterInterface
 		// Unsigned
 		$syntax .= ($fieldInfo['unsigned']) ? ' unsigned' : '';
 		// Collate
-		$syntax .= ($fieldInfo['type'] == 'string' || $fieldInfo['type'] == 'text') ? ' COLLATE ' . $this->_collate : '';
+		$syntax .= ($fieldInfo['type'] == 'email' || $fieldInfo['type'] == 'string' || $fieldInfo['type'] == 'text') ? ' CHARACTER SET '. $this->_charset .' COLLATE ' . $this->_collate : '';
 		// Nullable
 		$isNullable = true;
 		if($fieldInfo['required'] || !$fieldInfo['null']) {
@@ -230,7 +236,7 @@ class Mysql extends PDO_Abstract implements AdapterInterface
 			// Ensure table type is MyISAM if FULLTEXT columns have been specified
 			if('myisam' !== strtolower($options['engine'])) {
 				$options['engine'] = 'MyISAM';
-			} 
+			}
 			$syntax .= "\n, FULLTEXT(`" . implode('`, `', $fulltextFields) . "`)";
 		}
 
@@ -292,7 +298,7 @@ class Mysql extends PDO_Abstract implements AdapterInterface
 
 		// Columns
 		$syntax .= implode(",\n", $columnsSyntax);
-		
+
 		// Keys...
 		$ki = 0;
 		$tableKeys = array(
@@ -339,10 +345,10 @@ class Mysql extends PDO_Abstract implements AdapterInterface
 			// Ensure table type is MyISAM if FULLTEXT columns have been specified
 			if('myisam' !== strtolower($options['engine'])) {
 				$options['engine'] = 'MyISAM';
-			} 
+			}
 			$syntax .= "\n, FULLTEXT(`" . implode('`, `', $fulltextFields) . "`)";
 		}
-		
+
 		// PRIMARY
 		if($tableKeys['primary']) {
 			$syntax .= "\n, PRIMARY KEY(`" . implode('`, `', $tableKeys['primary']) . "`)";
