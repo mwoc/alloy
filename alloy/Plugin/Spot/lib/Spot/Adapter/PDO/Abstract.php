@@ -51,6 +51,16 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
         return $this->connection()->quote($string);
     }
 
+    /**
+     * Escape/quote direct user input
+     *
+     * @param string $string
+     */
+    public function escapeField($field)
+    {
+        return $field;
+    }
+
 
     /**
      * Ensure migration options are full and have all keys required
@@ -95,7 +105,7 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
 
     /**
      * Execute a CREATE TABLE command
-     *
+     * 
      * @param String $table Table name
      * @param Array $fields Fields and their attributes as defined in the mapper
      * @param Array $options Options that may affect migrations or how tables are setup
@@ -194,7 +204,7 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
 
 
     /**
-     * Prepare an SQL statement
+     * Prepare an SQL statement 
      */
     public function prepare($sql)
     {
@@ -237,7 +247,7 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
         $binds = $this->statementBinds($data);
         // build the statement
         $sql = "INSERT INTO " . $datasource .
-            " (" . implode(', ', array_keys($data)) . ")" .
+            " (" . implode(', ', array_map(array($this, 'escapeField'), array_keys($data))) . ")" .
             " VALUES(:" . implode(', :', array_keys($binds)) . ")";
 
         // Add query to log
@@ -286,8 +296,11 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
         $order = array();
         if($query->order) {
             foreach($query->order as $oField => $oSort) {
-                $order[] = $oField . " " . $oSort;
+                $order[] = $this->escapeField($oField) . " " . $oSort;
             }
+        }
+        if($query->having) {
+            $havingConditions = $this->statementConditions($query->having);
         }
 
         $sql = "
@@ -295,6 +308,7 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
             FROM " . $query->datasource . "
             " . ($conditions ? 'WHERE ' . $conditions : '') . "
             " . ($query->group ? 'GROUP BY ' . implode(', ', $query->group) : '') . "
+            " . ($query->having ? 'HAVING' . $havingConditions : '') . "
             " . ($order ? 'ORDER BY ' . implode(', ', $order) : '') . "
             " . ($query->limit ? 'LIMIT ' . $query->limit : '') . " " . ($query->limit && $query->offset ? 'OFFSET ' . $query->offset: '') . "
             ";
@@ -344,9 +358,9 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
      */
     public function count(\Spot\Query $query, array $options = array())
     {
-	$conditions = $this->statementConditions($query->conditions);
-	$binds = $this->statementBinds($query->params());
-	$sql = "
+        $conditions = $this->statementConditions($query->conditions);
+        $binds = $this->statementBinds($query->params());
+        $sql = "
             SELECT COUNT(*) as count
             FROM " . $query->datasource . "
             " . ($conditions ? 'WHERE ' . $conditions : '') . "
@@ -372,7 +386,7 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
             //if prepared, execute
             if($stmt && $stmt->execute($binds)) {
                 //the count is returned in the first column
-		$result = (int) $stmt->fetchColumn();
+                $result = (int) $stmt->fetchColumn();
             } else {
                 $result = false;
             }
@@ -402,7 +416,7 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
         $dataFields = array_combine(array_keys($data), array_keys($dataBinds));
         // Placeholders and passed data
         foreach($dataFields as $field => $bindField) {
-            $placeholders[] = $field . " = :" . $bindField . "";
+            $placeholders[] = $this->escapeField($field) . " = :" . $bindField . "";
         }
 
         $conditions = $this->statementConditions($where, count($dataBinds));
@@ -490,6 +504,45 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
 
 
     /**
+     * Begin transaction
+     */
+    public function beginTransaction() {
+        $sql = "BEGIN";
+
+        // Add query to log
+        \Spot\Log::addQuery($this, $sql);
+
+        return $this->connection()->exec($sql);
+    }
+
+
+    /**
+     * Commit transaction
+     */
+    public function commit() {
+        $sql = "COMMIT";
+
+        // Add query to log
+        \Spot\Log::addQuery($this, $sql);
+
+        return $this->connection()->exec($sql);
+    }
+
+
+    /**
+     * Rollback transaction
+     */
+    public function rollback() {
+        $sql = "ROLLBACK";
+
+        // Add query to log
+        \Spot\Log::addQuery($this, $sql);
+
+        return $this->connection()->exec($sql);
+    }
+
+
+    /**
      * Truncate a database table
      * Should delete all rows and reset serial/auto_increment keys to 0
      */
@@ -571,7 +624,17 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
      */
     public function statementFields(array $fields = array())
     {
-        return count($fields) > 0 ? implode(', ', $fields) : "*";
+        $preparedFields = array();
+        foreach($fields as $field) {
+            if(stripos($field, ' as ') !== false) {
+                // Leave calculated fields and SQL fragements alone
+                $preparedFields[] = $field;
+            } else {
+                // Escape field names
+                $preparedFields[] = $this->escapeField($field);
+            }
+        }
+        return count($fields) > 0 ? implode(', ', $preparedFields) : "*";
     }
 
 
@@ -627,7 +690,7 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
                     case '~=':
                     case '=~':
                     case ':regex':
-                        $operator = "REGEXP";
+                        $operator = "REGEX";
                     break;
                     // LIKE
                     case ':like':
@@ -637,7 +700,7 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
                     // MATCH(col) AGAINST(search)
                     case ':fulltext':
                         $colParam = preg_replace('/\W+/', '_', $col) . $ci;
-                        $whereClause = "MATCH(" . $col . ") AGAINST(:" . $colParam . ")";
+                        $whereClause = "MATCH(" . $this->escapeField($col) . ") AGAINST(:" . $colParam . ")";
                     break;
                     // ALL - Find ALL values in a set - Kind of like IN(), but seeking *all* the values
                     case ':all':
@@ -675,20 +738,22 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
                         $valueIn .= $this->escape($val) . ",";
                     }
                     $value = "(" . trim($valueIn, ',') . ")";
-                    $whereClause = $col . " " . $operator . " " . $value;
+                    $whereClause = $this->escapeField($col) . " " . $operator . " " . $value;
                 } elseif(is_null($value)) {
-                    $whereClause = $col . " " . $operator;
+                    $whereClause = $this->escapeField($col) . " " . $operator;
                 }
 
                 if(empty($whereClause)) {
                     // Add to binds array and add to WHERE clause
                     $colParam = preg_replace('/\W+/', '_', $col) . $ci;
-                    $sqlWhere[] = $col . " " . $operator . " :" . $colParam . "";
+                    $sqlWhere[] = $this->escapeField($col) . " " . $operator . " :" . $colParam . "";
                 } else {
                     $sqlWhere[] = $whereClause;
                 }
 
                 // Increment ensures column name distinction
+                // We need to do this whether it was used or not
+                // to maintain compatibility with statementConditions()
                 $ci++;
             }
             if ( $sqlStatement != "(" ) {
@@ -753,10 +818,8 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
                     }
                     $col = $colData[0];
 
-                    // Increment ensures column name distinction
                     if(false !== $ci) {
                         $col = $col . $ci;
-                        $ci++;
                     }
 
                     $colParam = preg_replace('/\W+/', '_', $col);
@@ -764,6 +827,10 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
                     // Add to binds array and add to WHERE clause
                     $binds[$colParam] = $bindValue;
                 }
+                // Increment ensures column name distinction
+                // We need to do this whether it was used or not
+                // to maintain compatibility with statementConditions()
+                $ci++;
             }
             if($loopOnce) { break; }
         }
@@ -783,7 +850,7 @@ abstract class PDO_Abstract extends AdapterAbstract implements AdapterInterface
             // Set PDO fetch mode
             $stmt->setFetchMode(\PDO::FETCH_ASSOC);
 
-            $collection = $mapper->collection($entityClass, $stmt);
+            $collection = $mapper->collection($entityClass, $stmt, $query->with());
 
             // Ensure statement is closed
             $stmt->closeCursor();
