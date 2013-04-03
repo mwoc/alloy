@@ -18,20 +18,27 @@ abstract class RelationAbstract
     protected $_relationData;
     protected $_collection;
     protected $_relationRowCount;
-    
-    
+
+
     /**
      * Constructor function
      *
      * @param object $mapper Spot_Mapper_Abstract object to query on for relationship data
      * @param array $resultsIdentities Array of key values for given result set primary key
      */
-    public function __construct(\Spot\Mapper $mapper, \Spot\Entity $entity, array $relationData)
+    public function __construct(\Spot\Mapper $mapper, $entity_or_collection, array $relationData)
     {
-        $entityName = get_class($entity);
+        $entityType = null;
+        if($entity_or_collection instanceof \Spot\Entity) {
+            $entityType = get_class($entity_or_collection);
+        } else if($entity_or_collection instanceof \Spot\Entity\Collection) {
+            $entityType = $entity_or_collection->entityName();
+        } else {
+            throw new \InvalidArgumentException("Entity or collection must be an instance of \\Spot\\Entity or \\Spot\\Entity\\Colletion");
+        }
 
         $this->_mapper = $mapper;
-        $this->_sourceEntity = $entity;
+        $this->_sourceEntity = $entity_or_collection;
         $this->_entityName = isset($relationData['entity']) ? $relationData['entity'] : null;
         $this->_conditions = isset($relationData['where']) ? $relationData['where'] : array();
         $this->_relationData = $relationData;
@@ -41,8 +48,8 @@ abstract class RelationAbstract
             throw new \InvalidArgumentException("Relation description key 'entity' must be set to an Entity class name.");
         }
     }
-    
-    
+
+
     /**
      * Get source entity object
      */
@@ -57,10 +64,10 @@ abstract class RelationAbstract
      */
     public function entityName()
     {
-        return ($this->_entityName == ':self') ? get_class($this->sourceEntity()) : $this->_entityName;
+        return ($this->_entityName == ':self') ? ($this->sourceEntity() instanceof \Spot\Entity\Collection ? $this->sourceEntity()->entityName() : get_class($this->sourceEntity())) : $this->_entityName;
     }
-    
-    
+
+
     /**
      * Get mapper instance
      */
@@ -68,8 +75,19 @@ abstract class RelationAbstract
     {
         return $this->_mapper;
     }
-    
-    
+
+
+    /**
+     * Get unresolved foreign key relations
+     *
+     * @return array
+     */
+    public function unresolvedConditions()
+    {
+        return $this->_conditions;
+    }
+
+
     /**
      * Get foreign key relations
      *
@@ -85,7 +103,7 @@ abstract class RelationAbstract
      * Replace entity value placeholders on relation definitions
      * Currently replaces ':entity.[col]' with the field value from the passed entity object
      */
-    public function resolveEntityConditions(Entity $entity, array $conditions, $replace = ':entity.')
+    public function resolveEntityConditions($entity, array $conditions, $replace = ':entity.')
     {
         // Load foreign keys with data from current row
         // Replace ':entity.[col]' with the field value from the passed entity object
@@ -93,14 +111,18 @@ abstract class RelationAbstract
             foreach($conditions as $relationCol => $col) {
                 if(is_string($col) && false !== strpos($col, $replace)) {
                     $col = str_replace($replace, '', $col);
-                    $conditions[$relationCol] = $entity->$col;
+                    if($entity instanceof \Spot\Entity) {
+                        $conditions[$relationCol] = $entity->$col;
+                    } else if($entity instanceof \Spot\Entity\Collection) {
+                        $conditions[$relationCol] = $entity->toArray($col);
+                    }
                 }
             }
         }
         return $conditions;
     }
-    
-    
+
+
     /**
      * Get sorting for relations
      *
@@ -111,8 +133,8 @@ abstract class RelationAbstract
         $sorting = isset($this->_relationData['order']) ? $this->_relationData['order'] : array();
         return $sorting;
     }
-    
-    
+
+
     /**
      * Called automatically when attribute is printed
      */
@@ -122,17 +144,17 @@ abstract class RelationAbstract
         $res = $this->execute();
         return ($res) ? "1" : "0";
     }
-    
-    
-    
+
+
+
     /**
      * Load query object with current relation data
      *
      * @return \Spot\Query
      */
     abstract protected function toQuery();
-    
-    
+
+
     /**
      * Fetch and cache returned query object from internal toQuery() method
      */
@@ -146,10 +168,23 @@ abstract class RelationAbstract
 
 
     /**
+     * Manually assign a collection to prevent execute() from firing
+     */
+    public function assignCollection($collection) {
+        $this->_collection = $collection;
+    }
+
+
+    /**
      * Passthrough for missing methods on expected object result
      */
     public function __call($func, $args)
     {
-        return call_user_func_array(array($this->execute(), $func), $args);
+        $obj = $this->execute();
+        if(is_object($obj)) {
+            return call_user_func_array(array($obj, $func), $args);
+        } else {
+            return $obj;
+        }
     }
 }

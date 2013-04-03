@@ -5,36 +5,35 @@ namespace Spot;
 * Entity object
 *
 * @package Spot
-* @link http://spot.os.ly
 */
 abstract class Entity
 {
     protected static $_datasource;
     protected static $_datasourceOptions = array();
     protected static $_connection;
-    
+
     // Entity data storage
     protected $_data = array();
     protected $_dataModified = array();
-    
+
     // Entity error messages (may be present after save attempt)
     protected $_errors = array();
 
-    
+
     /**
      * Constructor - allows setting of object properties with array on construct
      */
     public function __construct(array $data = array())
     {
         $this->initFields();
-        
+
         // Set given data
         if($data) {
             $this->data($data, false);
         }
     }
-    
-    
+
+
     /**
      * Set all field values to their defualts or null
      */
@@ -47,8 +46,8 @@ abstract class Entity
             }
         }
     }
-    
-    
+
+
     /**
      * Datasource getter/setter
      */
@@ -73,8 +72,8 @@ abstract class Entity
         }
         return static::$_datasourceOptions;
     }
-    
-    
+
+
     /**
      * Named connection getter/setter
      */
@@ -86,8 +85,8 @@ abstract class Entity
         }
         return static::$_connection;
     }
-    
-    
+
+
     /**
      * Return defined fields of the entity
      */
@@ -95,8 +94,17 @@ abstract class Entity
     {
         return array();
     }
-    
-    
+
+
+    /**
+     * Return defined hooks of the entity
+     */
+    public static function hooks()
+    {
+        return array();
+    }
+
+
     /**
      * Return defined fields of the entity
      */
@@ -104,8 +112,8 @@ abstract class Entity
     {
         return array();
     }
-    
-    
+
+
     /**
      * Gets and sets data on the current entity
      */
@@ -115,10 +123,17 @@ abstract class Entity
         if(null === $data || !$data) {
             return array_merge($this->_data, $this->_dataModified);
         }
-        
+
         // SET
         if(is_object($data) || is_array($data)) {
+            $fields = $this->fields();
             foreach($data as $k => $v) {
+                // Ensure value is set with type handler if Entity field type
+                if(array_key_exists($k, $fields)) {
+                    $typeHandler = Config::typeHandler($fields[$k]['type']);
+                    $v = $typeHandler::set($this, $v);
+                }
+
                 if(true === $modified) {
                     $this->_dataModified[$k] = $v;
                 } else {
@@ -131,7 +146,7 @@ abstract class Entity
         }
     }
 
-    
+
     /**
      * Return array of field data with data from the field names listed removed
      *
@@ -144,11 +159,51 @@ abstract class Entity
 
 
     /**
-     * Gets data that has been modified since object construct
+     * Gets data that has been modified since object construct, 
+     * optionally allowing for selecting a single field
      */
-    public function dataModified()
+    public function dataModified($field = null)
     {
+        if (null !== $field) {
+            return isset($this->_dataModified[$field]) ? $this->_dataModified[$field] : null;
+        }
         return $this->_dataModified;
+    }
+
+
+    /**
+     * Gets data that has not been modified since object construct,
+     * optionally allowing for selecting a single field
+     */
+    public function dataUnmodified($field = null)
+    {
+        if (null !== $field) {
+            return isset($this->_data[$field]) ? $this->_data[$field] : null;
+        }
+        return $this->_data;
+    }
+
+
+    /**
+     * Returns true if a field has been modified.  
+     * If no field name is passed in, return whether any fields have been changed
+     */
+    public function isModified($field = null)
+    {
+        if (null !== $field) {
+            if (array_key_exists($field, $this->_dataModified)) {
+                if (is_null($this->_dataModified[$field]) || is_null($this->_data[$field])) {
+                    // Use strict comparison for null values, non-strict otherwise
+                    return $this->_dataModified[$field] !== $this->_data[$field];
+                }
+                return $this->_dataModified[$field] != $this->_data[$field];
+            } else if (array_key_exists($field, $this->_data)) {
+                return false;
+            } else {
+                return null;
+            }
+        }
+        return !!count($this->_dataModified);
     }
 
 
@@ -174,8 +229,8 @@ abstract class Entity
         }
         return count($this->_errors) > 0;
     }
-    
-    
+
+
     /**
      * Error message getter/setter
      * 
@@ -187,15 +242,15 @@ abstract class Entity
         // Return errors for given field
         if(is_string($msgs)) {
             return isset($this->_errors[$msgs]) ? $this->_errors[$msgs] : array();
-    
+
         // Set error messages from given array
         } elseif(is_array($msgs)) {
             $this->_errors = $msgs;
         }
         return $this->_errors;
     }
-    
-    
+
+
     /**
      * Add an error to error messages array
      *
@@ -214,8 +269,8 @@ abstract class Entity
             $this->_errors[$field][] = $msg;
         }
     }
-    
-    
+
+
     /**
      * Enable isset() for object properties
      */
@@ -223,31 +278,42 @@ abstract class Entity
     {
         return isset($this->_data[$key]) || isset($this->_dataModified[$key]);
     }
-    
-    
+
+
     /**
      * Getter for field properties
      */
-    public function __get($field)
+    public function &__get($field)
     {
-        if(isset($this->_dataModified[$field])) {
-            return $this->_dataModified[$field];
+        $v = null;
+
+        // We can't use isset for _dataModified because it returns
+        // false for NULL values
+        if(array_key_exists($field, $this->_dataModified)) {
+            $v =&  $this->_dataModified[$field];
         } elseif(isset($this->_data[$field])) {
-            return $this->_data[$field];
+            $v =& $this->_data[$field];
         }
-        return null;
+
+        return $v;
     }
-    
-    
+
+
     /**
      * Setter for field properties
      */
     public function __set($field, $value)
     {
+        $fields = $this->fields();
+        if(isset($fields[$field])) {
+            // Ensure value is set with type handler
+            $typeHandler = Config::typeHandler($fields[$field]['type']);
+            $value = $typeHandler::set($this, $value);
+        }
         $this->_dataModified[$field] = $value;
     }
-    
-    
+
+
     /**
      * String representation of the class
      */
